@@ -14,6 +14,8 @@ interface Utterance {
   target?: string;
 }
 
+const DRAFT_KEY = "analysis-room-draft";
+
 const DISCLAIMER =
   "Panelists are AI interpretations of public figures' published ideas. They are not the real people and are not affiliated with or endorsed by them. This is educational reflection based on one side of the story, not therapy, diagnosis, or legal advice.";
 
@@ -24,10 +26,15 @@ function Temp({ t }: { t: Temperature }) {
 export default function AnalysisPage() {
   // ---------- situation ----------
   const [title, setTitle] = useState("");
+  const [formError, setFormError] = useState<{ field: "title" | "details" | "seats"; msg: string } | null>(null);
+  const titleRef = useRef<HTMLInputElement>(null);
+  const detailsRef = useRef<HTMLTextAreaElement>(null);
+  const seatsRef = useRef<HTMLDivElement>(null);
   const [relationship, setRelationship] = useState<string>("");
   const [details, setDetails] = useState("");
   const [goal, setGoal] = useState("");
   const [seats, setSeats] = useState<string[]>(A_DEFAULT_SEATS);
+  const draftReady = useRef(false);
   const [modNote, setModNote] = useState<{ reason: string; questions: string[] } | null>(null);
   const [suggesting, setSuggesting] = useState(false);
   const [config, setConfig] = useState<{ demo: boolean; model: string; locked: boolean } | null>(null);
@@ -67,7 +74,41 @@ export default function AnalysisPage() {
       })
       .catch(() => setConfig({ demo: false, model: "", locked: false }));
     loadPast();
+    // Bring back whatever was typed before a reload or closed tab.
+    try {
+      const d = JSON.parse(localStorage.getItem(DRAFT_KEY) || "null");
+      if (d && typeof d === "object") {
+        if (typeof d.title === "string") setTitle(d.title);
+        if (typeof d.relationship === "string") setRelationship(d.relationship);
+        if (typeof d.details === "string") setDetails(d.details);
+        if (typeof d.goal === "string") setGoal(d.goal);
+        if (Array.isArray(d.seats) && d.seats.every((x: unknown) => typeof x === "string" && A_SEAT_BY_ID[x as string])) setSeats(d.seats);
+      }
+    } catch {}
+    draftReady.current = true;
   }, []);
+
+  // Keep the form saved in this browser as it's typed.
+  useEffect(() => {
+    if (!draftReady.current) return;
+    try {
+      if (title || details || goal || relationship) localStorage.setItem(DRAFT_KEY, JSON.stringify({ title, relationship, details, goal, seats }));
+      else localStorage.removeItem(DRAFT_KEY);
+    } catch {}
+  }, [title, relationship, details, goal, seats]);
+
+  const clearForm = () => {
+    setTitle("");
+    setRelationship("");
+    setDetails("");
+    setGoal("");
+    setSeats(A_DEFAULT_SEATS);
+    setModNote(null);
+    setFormError(null);
+    try {
+      localStorage.removeItem(DRAFT_KEY);
+    } catch {}
+  };
 
   const relock = () => {
     setAccessCode("");
@@ -137,7 +178,15 @@ export default function AnalysisPage() {
         break;
       case "seat_error":
         done(ev.seat);
-        setErrors((e) => [...e, `${A_SEAT_BY_ID[ev.seat]?.name}: ${ev.message}`]);
+        setErrors((e) => {
+          // Several panelists failing for the same reason show as one line.
+          const name = A_SEAT_BY_ID[ev.seat]?.name ?? ev.seat;
+          const i = e.findIndex((x) => x.endsWith(`: ${ev.message}`));
+          if (i < 0) return [...e, `${name}: ${ev.message}`];
+          const next = [...e];
+          next[i] = `${e[i].slice(0, -(ev.message.length + 2))}, ${name}: ${ev.message}`;
+          return next;
+        });
         break;
       case "error":
         setErrors((e) => [...e, ev.message]);
@@ -149,8 +198,21 @@ export default function AnalysisPage() {
 
   const start = async () => {
     const s: Situation = { title: title.trim(), relationship, details: details.trim(), goal: goal.trim(), seats };
-    if (!s.title || !s.details) return alert("Add a one-line summary and the details of what happened.");
-    if (s.seats.length < 2) return alert("Pick at least two panelists.");
+    const problem: { field: "title" | "details" | "seats"; msg: string } | null = !s.title
+      ? { field: "title", msg: "This box is empty. Write one short line about what's going on (the grey example text doesn't count)." }
+      : !s.details
+        ? { field: "details", msg: "This box is empty. Tell the story or paste the messages here (the grey example text doesn't count)." }
+        : s.seats.length < 2
+          ? { field: "seats", msg: "Pick at least two panelists." }
+          : null;
+    if (problem) {
+      setFormError(problem);
+      const el = problem.field === "title" ? titleRef.current : problem.field === "details" ? detailsRef.current : seatsRef.current;
+      el?.scrollIntoView({ behavior: "smooth", block: "center" });
+      if (el && "focus" in el && problem.field !== "seats") setTimeout(() => (el as HTMLElement).focus(), 300);
+      return;
+    }
+    setFormError(null);
     resetRoom();
     setSituation(s);
     setView("room");
@@ -264,13 +326,30 @@ export default function AnalysisPage() {
       ) : view === "situation" ? (
         <main className="brief">
           <section className="card brief-card">
-            <h1>Put a situation in the room.</h1>
+            <div className="row-between">
+              <h1>Put a situation in the room.</h1>
+              {(title || details || goal) && (
+                <button className="ghost" onClick={() => confirm("Clear everything you've typed?") && clearForm()}>
+                  Clear form
+                </button>
+              )}
+            </div>
             <p className="muted">
               Describe a conversation, a conflict, or a relationship dynamic. A panel of AI interpretations of psychology, communication and
               negotiation experts each read it through one lens, challenge each other, and hand you a playbook with exact words to say.
             </p>
             <label>In one line, what&apos;s going on?</label>
-            <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="My partner goes silent for days after every disagreement" />
+            <input
+              ref={titleRef}
+              className={formError?.field === "title" ? "invalid" : ""}
+              value={title}
+              onChange={(e) => {
+                setTitle(e.target.value);
+                if (formError?.field === "title") setFormError(null);
+              }}
+              placeholder="e.g. My partner goes silent for days after every disagreement"
+            />
+            {formError?.field === "title" && <div className="field-err">{formError.msg}</div>}
             <label>Who is this with?</label>
             <div className="rel-row">
               {RELATIONSHIPS.map((r) => (
@@ -281,16 +360,23 @@ export default function AnalysisPage() {
             </div>
             <label>What happened? (paste texts or the conversation if you have them)</label>
             <textarea
+              ref={detailsRef}
+              className={formError?.field === "details" ? "invalid" : ""}
               rows={9}
               maxLength={20000}
               value={details}
-              onChange={(e) => setDetails(e.target.value)}
+              onChange={(e) => {
+                setDetails(e.target.value);
+                if (formError?.field === "details") setFormError(null);
+              }}
               placeholder={
-                "Tell the story in your own words, or paste the messages, e.g.\n\nMe: Can we talk about last night?\nThem: There's nothing to talk about. You always do this.\nMe: I just felt hurt when...\n\nInclude how long it's been going on and anything that feels important."
+                "Example only, type your own:\n\nTell the story in your own words, or paste the messages, e.g.\n\nMe: Can we talk about last night?\nThem: There's nothing to talk about. You always do this.\nMe: I just felt hurt when...\n\nInclude how long it's been going on and anything that feels important."
               }
             />
+            {formError?.field === "details" && <div className="field-err">{formError.msg}</div>}
             <label>What do you want out of this?</label>
-            <input value={goal} onChange={(e) => setGoal(e.target.value)} placeholder="Understand what's really going on and know what to say next" />
+            <input value={goal} onChange={(e) => setGoal(e.target.value)} placeholder="e.g. Understand what's really going on and know what to say next" />
+            <p className="muted small">What you type is saved in this browser as you go, so a reload won&apos;t lose it.</p>
             <div className="notice">
               Use first names or nicknames only, and leave out details that could identify someone. If you&apos;re in danger right now, contact local
               emergency services. In the US, call or text <b>988</b> (crisis line) or call <b>1-800-799-7233</b> (domestic violence hotline).
@@ -316,7 +402,7 @@ export default function AnalysisPage() {
                 )}
               </div>
             )}
-            <div className="seat-grid">
+            <div className="seat-grid" ref={seatsRef}>
               {A_SEATS.map((s) => {
                 const on = seats.includes(s.id);
                 return (
@@ -324,7 +410,10 @@ export default function AnalysisPage() {
                     key={s.id}
                     className={`seat-chip ${on ? "on" : ""}`}
                     style={{ ["--accent" as string]: s.accent }}
-                    onClick={() => setSeats((x) => (on ? x.filter((y) => y !== s.id) : [...x, s.id]))}
+                    onClick={() => {
+                      setSeats((x) => (on ? x.filter((y) => y !== s.id) : [...x, s.id]));
+                      if (formError?.field === "seats") setFormError(null);
+                    }}
                   >
                     <div className="chip-face">
                       <Avatar seat={s} />
@@ -337,6 +426,7 @@ export default function AnalysisPage() {
                 );
               })}
             </div>
+            {formError?.field === "seats" && <div className="field-err">{formError.msg}</div>}
             <div className="row-between start-row">
               <span className="muted">{seats.length} panelists · 3 rounds</span>
               <button className="primary" onClick={start}>
@@ -457,7 +547,9 @@ export default function AnalysisPage() {
                 </div>
               ) : (
                 <div className="speech waiting">
-                  <p className="muted">{running ? "The panel is reading your situation…" : "Waiting to start."}</p>
+                  <p className="muted">
+                    {running ? "The panel is reading your situation…" : errors.length ? "The analysis stopped. See the message below." : "Waiting to start."}
+                  </p>
                 </div>
               )}
             </div>
@@ -468,6 +560,14 @@ export default function AnalysisPage() {
               {errors.map((e, i) => (
                 <div key={i}>⚠ {e}</div>
               ))}
+              {!running && !playbook && (
+                <div className="row-between start-row">
+                  <span className="muted small">Your situation is still filled in.</span>
+                  <button className="ghost" onClick={() => { setView("situation"); resetRoom(); }}>
+                    ‹ Back to the form
+                  </button>
+                </div>
+              )}
             </section>
           )}
 
@@ -606,7 +706,7 @@ export default function AnalysisPage() {
                   <button className="primary" onClick={() => downloadPlaybookPDF({ situation, reads, patterns, crosses, assessments, playbook })}>
                     Download PDF
                   </button>
-                  <button className="ghost" onClick={() => { setView("situation"); resetRoom(); }}>
+                  <button className="ghost" onClick={() => { clearForm(); setView("situation"); resetRoom(); window.scrollTo({ top: 0 }); }}>
                     New analysis
                   </button>
                 </div>

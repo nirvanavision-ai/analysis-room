@@ -6,6 +6,8 @@ import { A_SEAT_BY_ID } from "./seats";
 import type { AnalysisEvent, Assessment, CrossExam, Patterns, Playbook, Read, Situation } from "./types";
 
 export class LockedError extends Error {}
+/** A problem every later call would hit too (no credit, bad key): stop the whole analysis. */
+export class FatalError extends Error {}
 
 export function getAccessCode() {
   try {
@@ -40,6 +42,7 @@ export async function api<T>(url: string, body: unknown, signal?: AbortSignal): 
     const j = await res.json().catch(() => ({}));
     if (res.status === 401) throw new LockedError(j.error || "Access code needed.");
     if (res.ok) return j as T;
+    if (j.fatal) throw new FatalError(j.error || "The analysis can't continue.");
     lastErr = new Error(j.error || (res.status === 504 ? "The server took too long." : `Request failed (${res.status})`));
     if (res.status === 400) break; // our input was bad; retrying won't help
     await new Promise((r) => setTimeout(r, 1500));
@@ -69,7 +72,7 @@ export async function runAnalysis(sit: Situation, emit: (ev: AnalysisEvent) => v
           results[seat] = data;
           onDone(seat, data);
         } catch (e) {
-          if (e instanceof LockedError) throw e;
+          if (e instanceof LockedError || e instanceof FatalError) throw e;
           emit({ type: "seat_error", seat, message: `${label}: ${(e as Error).message}` });
         }
       }),
