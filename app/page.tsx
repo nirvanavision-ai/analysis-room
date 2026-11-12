@@ -14,6 +14,8 @@ interface Utterance {
   target?: string;
 }
 
+const DRAFT_KEY = "analysis-room-draft";
+
 const DISCLAIMER =
   "Panelists are AI interpretations of public figures' published ideas. They are not the real people and are not affiliated with or endorsed by them. This is educational reflection based on one side of the story, not therapy, diagnosis, or legal advice.";
 
@@ -32,6 +34,7 @@ export default function AnalysisPage() {
   const [details, setDetails] = useState("");
   const [goal, setGoal] = useState("");
   const [seats, setSeats] = useState<string[]>(A_DEFAULT_SEATS);
+  const draftReady = useRef(false);
   const [modNote, setModNote] = useState<{ reason: string; questions: string[] } | null>(null);
   const [suggesting, setSuggesting] = useState(false);
   const [config, setConfig] = useState<{ demo: boolean; model: string; locked: boolean } | null>(null);
@@ -71,7 +74,41 @@ export default function AnalysisPage() {
       })
       .catch(() => setConfig({ demo: false, model: "", locked: false }));
     loadPast();
+    // Bring back whatever was typed before a reload or closed tab.
+    try {
+      const d = JSON.parse(localStorage.getItem(DRAFT_KEY) || "null");
+      if (d && typeof d === "object") {
+        if (typeof d.title === "string") setTitle(d.title);
+        if (typeof d.relationship === "string") setRelationship(d.relationship);
+        if (typeof d.details === "string") setDetails(d.details);
+        if (typeof d.goal === "string") setGoal(d.goal);
+        if (Array.isArray(d.seats) && d.seats.every((x: unknown) => typeof x === "string" && A_SEAT_BY_ID[x as string])) setSeats(d.seats);
+      }
+    } catch {}
+    draftReady.current = true;
   }, []);
+
+  // Keep the form saved in this browser as it's typed.
+  useEffect(() => {
+    if (!draftReady.current) return;
+    try {
+      if (title || details || goal || relationship) localStorage.setItem(DRAFT_KEY, JSON.stringify({ title, relationship, details, goal, seats }));
+      else localStorage.removeItem(DRAFT_KEY);
+    } catch {}
+  }, [title, relationship, details, goal, seats]);
+
+  const clearForm = () => {
+    setTitle("");
+    setRelationship("");
+    setDetails("");
+    setGoal("");
+    setSeats(A_DEFAULT_SEATS);
+    setModNote(null);
+    setFormError(null);
+    try {
+      localStorage.removeItem(DRAFT_KEY);
+    } catch {}
+  };
 
   const relock = () => {
     setAccessCode("");
@@ -289,7 +326,14 @@ export default function AnalysisPage() {
       ) : view === "situation" ? (
         <main className="brief">
           <section className="card brief-card">
-            <h1>Put a situation in the room.</h1>
+            <div className="row-between">
+              <h1>Put a situation in the room.</h1>
+              {(title || details || goal) && (
+                <button className="ghost" onClick={() => confirm("Clear everything you've typed?") && clearForm()}>
+                  Clear form
+                </button>
+              )}
+            </div>
             <p className="muted">
               Describe a conversation, a conflict, or a relationship dynamic. A panel of AI interpretations of psychology, communication and
               negotiation experts each read it through one lens, challenge each other, and hand you a playbook with exact words to say.
@@ -332,6 +376,7 @@ export default function AnalysisPage() {
             {formError?.field === "details" && <div className="field-err">{formError.msg}</div>}
             <label>What do you want out of this?</label>
             <input value={goal} onChange={(e) => setGoal(e.target.value)} placeholder="e.g. Understand what's really going on and know what to say next" />
+            <p className="muted small">What you type is saved in this browser as you go, so a reload won&apos;t lose it.</p>
             <div className="notice">
               Use first names or nicknames only, and leave out details that could identify someone. If you&apos;re in danger right now, contact local
               emergency services. In the US, call or text <b>988</b> (crisis line) or call <b>1-800-799-7233</b> (domestic violence hotline).
@@ -661,7 +706,7 @@ export default function AnalysisPage() {
                   <button className="primary" onClick={() => downloadPlaybookPDF({ situation, reads, patterns, crosses, assessments, playbook })}>
                     Download PDF
                   </button>
-                  <button className="ghost" onClick={() => { setView("situation"); resetRoom(); }}>
+                  <button className="ghost" onClick={() => { clearForm(); setView("situation"); resetRoom(); window.scrollTo({ top: 0 }); }}>
                     New analysis
                   </button>
                 </div>
