@@ -2,6 +2,7 @@
 // (see lib/analysis/runner.ts), so no single request runs long enough to time out.
 import { cleanSituation, InputError, stepAssessment, stepCrossExam, stepPatterns, stepPlaybook, stepRead } from "@/lib/analysis/engine";
 import { requireAccess } from "@/lib/auth";
+import { explainError } from "@/lib/claude";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -33,7 +34,9 @@ export async function POST(req: Request) {
     }
   } catch (e) {
     const bad = e instanceof InputError || e instanceof SyntaxError;
-    if (!bad) console.error("analysis step failed:", e);
-    return Response.json({ error: (e as Error).message || "Something went wrong." }, { status: bad ? 400 : 502 });
+    if (bad) return Response.json({ error: (e as Error).message || "Something went wrong." }, { status: 400 });
+    console.error("analysis step failed:", e);
+    const { message, fatal } = explainError(e);
+    return Response.json({ error: message, fatal }, { status: 502 });
   }
 }

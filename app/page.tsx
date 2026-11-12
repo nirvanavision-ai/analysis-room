@@ -141,7 +141,15 @@ export default function AnalysisPage() {
         break;
       case "seat_error":
         done(ev.seat);
-        setErrors((e) => [...e, `${A_SEAT_BY_ID[ev.seat]?.name}: ${ev.message}`]);
+        setErrors((e) => {
+          // Several panelists failing for the same reason show as one line.
+          const name = A_SEAT_BY_ID[ev.seat]?.name ?? ev.seat;
+          const i = e.findIndex((x) => x.endsWith(`: ${ev.message}`));
+          if (i < 0) return [...e, `${name}: ${ev.message}`];
+          const next = [...e];
+          next[i] = `${e[i].slice(0, -(ev.message.length + 2))}, ${name}: ${ev.message}`;
+          return next;
+        });
         break;
       case "error":
         setErrors((e) => [...e, ev.message]);
@@ -494,7 +502,9 @@ export default function AnalysisPage() {
                 </div>
               ) : (
                 <div className="speech waiting">
-                  <p className="muted">{running ? "The panel is reading your situation…" : "Waiting to start."}</p>
+                  <p className="muted">
+                    {running ? "The panel is reading your situation…" : errors.length ? "The analysis stopped. See the message below." : "Waiting to start."}
+                  </p>
                 </div>
               )}
             </div>
@@ -505,6 +515,14 @@ export default function AnalysisPage() {
               {errors.map((e, i) => (
                 <div key={i}>⚠ {e}</div>
               ))}
+              {!running && !playbook && (
+                <div className="row-between start-row">
+                  <span className="muted small">Your situation is still filled in.</span>
+                  <button className="ghost" onClick={() => { setView("situation"); resetRoom(); }}>
+                    ‹ Back to the form
+                  </button>
+                </div>
+              )}
             </section>
           )}
 

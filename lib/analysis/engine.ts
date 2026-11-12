@@ -156,7 +156,7 @@ export function cleanSituation(raw: unknown): Situation {
     relationship: str(s.relationship, LIMITS.relationship),
     details: str(s.details, LIMITS.details),
     goal: str(s.goal, LIMITS.goal),
-    seats: Array.isArray(s.seats) ? [...new Set(s.seats.filter((id) => typeof id === "string" && A_SEAT_BY_ID[id]))].slice(0, 10) : [],
+    seats: Array.isArray(s.seats) ? [...new Set(s.seats.filter((id) => typeof id === "string" && A_SEAT_BY_ID[id]))] : [],
   };
   if (!sit.title || !sit.details) throw new InputError("Add a one-line summary and the details of what happened.");
   if (sit.seats.length < 2) throw new InputError("Pick at least two panelists.");

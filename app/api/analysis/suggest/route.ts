@@ -1,6 +1,7 @@
 import { InputError, suggestPanel } from "@/lib/analysis/engine";
 import { A_SEATS } from "@/lib/analysis/seats";
 import { requireAccess } from "@/lib/auth";
+import { explainError } from "@/lib/claude";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,6 +13,7 @@ export async function POST(req: Request) {
   try {
     return Response.json(await suggestPanel(await req.json(), A_SEATS));
   } catch (e) {
-    return Response.json({ error: (e as Error).message }, { status: e instanceof InputError ? 400 : 502 });
+    if (e instanceof InputError) return Response.json({ error: e.message }, { status: 400 });
+    return Response.json({ error: explainError(e).message }, { status: 502 });
   }
 }
