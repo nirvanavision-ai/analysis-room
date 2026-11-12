@@ -239,3 +239,5 @@ main { max-width: 1180px; margin: 0 auto; padding: 24px 20px 80px; }
 .past-row { display: flex; gap: 8px; align-items: stretch; }
 .past-row .wide { flex: 1; }
 .past-row .x { flex: 0 0 auto; padding: 0 12px; }
+input.invalid, textarea.invalid { border-color: #f87171 !important; box-shadow: 0 0 0 3px rgba(248,113,113,0.25); }
+.field-err { margin-top: 8px; color: #fca5a5; font-size: 14px; font-weight: 500; }

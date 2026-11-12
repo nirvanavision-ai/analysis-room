@@ -24,6 +24,10 @@ function Temp({ t }: { t: Temperature }) {
 export default function AnalysisPage() {
   // ---------- situation ----------
   const [title, setTitle] = useState("");
+  const [formError, setFormError] = useState<{ field: "title" | "details" | "seats"; msg: string } | null>(null);
+  const titleRef = useRef<HTMLInputElement>(null);
+  const detailsRef = useRef<HTMLTextAreaElement>(null);
+  const seatsRef = useRef<HTMLDivElement>(null);
   const [relationship, setRelationship] = useState<string>("");
   const [details, setDetails] = useState("");
   const [goal, setGoal] = useState("");
@@ -149,8 +153,21 @@ export default function AnalysisPage() {
 
   const start = async () => {
     const s: Situation = { title: title.trim(), relationship, details: details.trim(), goal: goal.trim(), seats };
-    if (!s.title || !s.details) return alert("Add a one-line summary and the details of what happened.");
-    if (s.seats.length < 2) return alert("Pick at least two panelists.");
+    const problem: { field: "title" | "details" | "seats"; msg: string } | null = !s.title
+      ? { field: "title", msg: "This box is empty. Write one short line about what's going on (the grey example text doesn't count)." }
+      : !s.details
+        ? { field: "details", msg: "This box is empty. Tell the story or paste the messages here (the grey example text doesn't count)." }
+        : s.seats.length < 2
+          ? { field: "seats", msg: "Pick at least two panelists." }
+          : null;
+    if (problem) {
+      setFormError(problem);
+      const el = problem.field === "title" ? titleRef.current : problem.field === "details" ? detailsRef.current : seatsRef.current;
+      el?.scrollIntoView({ behavior: "smooth", block: "center" });
+      if (el && "focus" in el && problem.field !== "seats") setTimeout(() => (el as HTMLElement).focus(), 300);
+      return;
+    }
+    setFormError(null);
     resetRoom();
     setSituation(s);
     setView("room");
@@ -270,7 +287,17 @@ export default function AnalysisPage() {
               negotiation experts each read it through one lens, challenge each other, and hand you a playbook with exact words to say.
             </p>
             <label>In one line, what&apos;s going on?</label>
-            <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="My partner goes silent for days after every disagreement" />
+            <input
+              ref={titleRef}
+              className={formError?.field === "title" ? "invalid" : ""}
+              value={title}
+              onChange={(e) => {
+                setTitle(e.target.value);
+                if (formError?.field === "title") setFormError(null);
+              }}
+              placeholder="e.g. My partner goes silent for days after every disagreement"
+            />
+            {formError?.field === "title" && <div className="field-err">{formError.msg}</div>}
             <label>Who is this with?</label>
             <div className="rel-row">
               {RELATIONSHIPS.map((r) => (
@@ -281,16 +308,22 @@ export default function AnalysisPage() {
             </div>
             <label>What happened? (paste texts or the conversation if you have them)</label>
             <textarea
+              ref={detailsRef}
+              className={formError?.field === "details" ? "invalid" : ""}
               rows={9}
               maxLength={20000}
               value={details}
-              onChange={(e) => setDetails(e.target.value)}
+              onChange={(e) => {
+                setDetails(e.target.value);
+                if (formError?.field === "details") setFormError(null);
+              }}
               placeholder={
-                "Tell the story in your own words, or paste the messages, e.g.\n\nMe: Can we talk about last night?\nThem: There's nothing to talk about. You always do this.\nMe: I just felt hurt when...\n\nInclude how long it's been going on and anything that feels important."
+                "Example only, type your own:\n\nTell the story in your own words, or paste the messages, e.g.\n\nMe: Can we talk about last night?\nThem: There's nothing to talk about. You always do this.\nMe: I just felt hurt when...\n\nInclude how long it's been going on and anything that feels important."
               }
             />
+            {formError?.field === "details" && <div className="field-err">{formError.msg}</div>}
             <label>What do you want out of this?</label>
-            <input value={goal} onChange={(e) => setGoal(e.target.value)} placeholder="Understand what's really going on and know what to say next" />
+            <input value={goal} onChange={(e) => setGoal(e.target.value)} placeholder="e.g. Understand what's really going on and know what to say next" />
             <div className="notice">
               Use first names or nicknames only, and leave out details that could identify someone. If you&apos;re in danger right now, contact local
               emergency services. In the US, call or text <b>988</b> (crisis line) or call <b>1-800-799-7233</b> (domestic violence hotline).
@@ -316,7 +349,7 @@ export default function AnalysisPage() {
                 )}
               </div>
             )}
-            <div className="seat-grid">
+            <div className="seat-grid" ref={seatsRef}>
               {A_SEATS.map((s) => {
                 const on = seats.includes(s.id);
                 return (
@@ -324,7 +357,10 @@ export default function AnalysisPage() {
                     key={s.id}
                     className={`seat-chip ${on ? "on" : ""}`}
                     style={{ ["--accent" as string]: s.accent }}
-                    onClick={() => setSeats((x) => (on ? x.filter((y) => y !== s.id) : [...x, s.id]))}
+                    onClick={() => {
+                      setSeats((x) => (on ? x.filter((y) => y !== s.id) : [...x, s.id]));
+                      if (formError?.field === "seats") setFormError(null);
+                    }}
                   >
                     <div className="chip-face">
                       <Avatar seat={s} />
@@ -337,6 +373,7 @@ export default function AnalysisPage() {
                 );
               })}
             </div>
+            {formError?.field === "seats" && <div className="field-err">{formError.msg}</div>}
             <div className="row-between start-row">
               <span className="muted">{seats.length} panelists · 3 rounds</span>
               <button className="primary" onClick={start}>
